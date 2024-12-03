@@ -29,4 +29,15 @@
    - docx2python 库
    - tkinter 库（Python标准库）
 
-## 安装依赖 
+## 安装依赖
+pip install python-docx
+pip install docx2python
+
+## 主要改进：
+重新组织了内容结构，更清晰易读
+添加了简介部分
+将功能分类展示
+详细说明了使用方法
+补充了更多常见问题
+优化了开发者信息的展示
+添加了环境要求说明
