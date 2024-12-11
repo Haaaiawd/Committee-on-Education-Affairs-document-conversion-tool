@@ -158,7 +158,7 @@ def process_word_file(input_file, output_dir):
                     title_found = True
                     continue
 
-                # 如果从文件���中没有提取到作者名，则尝试从文档内容中提取
+                # 如果从文件名中没有提取到作者名，则尝试从文档内容中提取
                 if not author_name and text.startswith('852'):
                     author_match = re.search(r'852\d*[^-]*-([^-\d\W]+)', text)
                     if not author_match:
@@ -180,7 +180,7 @@ def process_word_file(input_file, output_dir):
                 # 处理正文（跳过学号行）
                 if title_found and not text.startswith('852'):
                     new_para = new_doc.add_paragraph()
-                    text_run = new_para.add_run(text)
+                    text_run = new_para.add_run('  ' + text)
                     text_run.font.size = Pt(12)
                     text_run.font.name = '宋体'
                     text_run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')

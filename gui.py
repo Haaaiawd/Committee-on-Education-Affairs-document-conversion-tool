@@ -1,12 +1,18 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 import threading
-from process_word import process_word_file, extract_author_number, extract_author_from_filename
+from process_word import (
+    process_word_file, 
+    extract_author_number, 
+    extract_author_from_filename,
+    extract_images_from_doc
+)
 import sys
 import io
 import os
 import shutil
 import re
+from docx import Document
 
 class RedirectText:
     def __init__(self, text_widget, error_only=False):
@@ -29,7 +35,7 @@ class RedirectText:
                 self.error_files.add(self.current_file)
         # 检查是否是成功信息
         elif string.strip().startswith('✓'):
-            # 如果有当前文��，添加到成功文件集合中
+            # 如果有当前文件，添加到成功文件集合中
             if self.current_file:
                 self.success_files.add(self.current_file)
             
@@ -95,6 +101,14 @@ class App:
         self.pack_error_btn = ttk.Button(button_frame, text="打包错误文件", command=self.pack_error_files)
         self.pack_error_btn.pack(side=tk.LEFT, padx=5)
         self.pack_error_btn.state(['disabled'])
+        
+        # 添加提取图片按钮
+        self.extract_images_btn = ttk.Button(button_frame, text="提取图片", command=self.extract_images)
+        self.extract_images_btn.pack(side=tk.LEFT, padx=5)
+        
+        # 添加提取标题按钮
+        self.extract_titles_btn = ttk.Button(button_frame, text="提取标题", command=self.extract_titles)
+        self.extract_titles_btn.pack(side=tk.LEFT, padx=5)
         
         # 进度显示
         self.progress_var = tk.StringVar(value="就绪")
@@ -220,7 +234,7 @@ class App:
                 
                 summary = f"\n处理完成！\n总计: {total_files} 个文件\n成功: {success_count} 个\n失败: {failed_count} 个\n"
                 if failed_count > 0:
-                    summary += "\n失败的文件作者行数字:\n"
+                    summary += "\n失败的文件作者数字:\n"
                     for failed_file in self.redirect.get_error_files():
                         author_num = extract_author_number(failed_file)
                         summary += f"作者{author_num}\n"
@@ -237,7 +251,7 @@ class App:
     def conversion_complete(self):
         success_count = len(self.redirect.get_success_files())
         failed_count = len(self.redirect.get_error_files())
-        self.progress_var.set(f"处理完成��成功: {success_count} 个，失败: {failed_count} 个")
+        self.progress_var.set(f"处理完成，成功: {success_count} 个，失败: {failed_count} 个")
         self.convert_btn.state(['!disabled'])
         if failed_count > 0:
             self.pack_error_btn.state(['!disabled'])
@@ -248,6 +262,113 @@ class App:
         # 只检查错误文件
         if self.redirect.get_error_files():
             self.pack_error_btn.state(['!disabled'])
+
+    def extract_images(self):
+        input_dir = self.input_path.get()
+        output_dir = self.output_path.get()
+        if not input_dir or not output_dir:
+            self.progress_var.set("请选择输入和输出文件夹")
+            return
+        
+        if not os.path.exists(input_dir):
+            self.progress_var.set("输入目录不存在")
+            return
+        
+        # 清空显示框
+        self.log_text.delete(1.0, tk.END)
+        self.progress_var.set("正在提取图片...")
+        self.extract_images_btn.state(['disabled'])
+        
+        def extract_thread():
+            try:
+                # 创建图片输出目录
+                images_dir = os.path.join(self.output_path.get(), "提取的图片")
+                os.makedirs(images_dir, exist_ok=True)
+                
+                # 获取所有Word文件
+                docx_files = [f for f in os.listdir(input_dir) if f.endswith('.docx')]
+                total_images = 0
+                
+                for filename in docx_files:
+                    input_file = os.path.join(input_dir, filename)
+                    # 为每个文件创建子文件夹
+                    file_images_dir = os.path.join(images_dir, os.path.splitext(filename)[0])
+                    os.makedirs(file_images_dir, exist_ok=True)
+                    
+                    # 提取图片
+                    temp_images = extract_images_from_doc(input_file, file_images_dir)
+                    if temp_images:
+                        self.log_text.insert('end', f"✓ {filename}: 提取了 {len(temp_images)} 张图片\n")
+                        total_images += len(temp_images)
+                    else:
+                        self.log_text.insert('end', f"! {filename}: 未找到图片\n")
+                    
+                summary = f"\n提取完成！\n总计处理 {len(docx_files)} 个文件\n共提取 {total_images} 张图片\n"
+                self.log_text.insert('end', summary)
+                self.log_text.see('end')
+                
+                self.root.after(0, lambda: self.progress_var.set(f"图片提取完成，共 {total_images} 张"))
+                self.root.after(0, lambda: self.extract_images_btn.state(['!disabled']))
+                
+            except Exception as e:
+                self.root.after(0, lambda: self.progress_var.set(f"提取图片时出错: {str(e)}"))
+                self.root.after(0, lambda: self.extract_images_btn.state(['!disabled']))
+        
+        threading.Thread(target=extract_thread, daemon=True).start()
+
+    def extract_titles(self):
+        input_dir = self.input_path.get()
+        if not input_dir:
+            self.progress_var.set("请选择输入文件夹")
+            return
+        
+        if not os.path.exists(input_dir):
+            self.progress_var.set("输入目录不存在")
+            return
+        
+        # 清空显示框
+        self.log_text.delete(1.0, tk.END)
+        self.progress_var.set("正在提取标题...")
+        self.extract_titles_btn.state(['disabled'])
+        
+        def extract_thread():
+            try:
+                # 获取所有Word文件
+                docx_files = [f for f in os.listdir(input_dir) if f.endswith('.docx')]
+                titles = []
+                
+                for filename in docx_files:
+                    input_file = os.path.join(input_dir, filename)
+                    try:
+                        doc = Document(input_file)
+                        # 获取第一个非空段落作为标题
+                        for para in doc.paragraphs:
+                            if para.text.strip():
+                                titles.append((filename, para.text.strip()))
+                                break
+                    except Exception as e:
+                        self.log_text.insert('end', f"× {filename}: 提取标题失败 - {str(e)}\n")
+                
+                # 按文件名排序
+                titles.sort(key=lambda x: extract_author_number(x[0]))
+                
+                # 显示标题
+                self.log_text.insert('end', "提取的标题：\n" + "="*50 + "\n\n")
+                for filename, title in titles:
+                    self.log_text.insert('end', f"【{filename}】\n{title}\n\n")
+                
+                summary = f"\n提取完成！\n总计处理 {len(docx_files)} 个文件\n成功提取 {len(titles)} 个标题\n"
+                self.log_text.insert('end', "="*50 + "\n" + summary)
+                self.log_text.see('end')
+                
+                self.root.after(0, lambda: self.progress_var.set(f"标题提取完成，共 {len(titles)} 个"))
+                self.root.after(0, lambda: self.extract_titles_btn.state(['!disabled']))
+                
+            except Exception as e:
+                self.root.after(0, lambda: self.progress_var.set(f"提取标题时出错: {str(e)}"))
+                self.root.after(0, lambda: self.extract_titles_btn.state(['!disabled']))
+        
+        threading.Thread(target=extract_thread, daemon=True).start()
 
 # 添加提取作者数字的函数
 def extract_author_number(filename):
