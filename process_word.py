@@ -170,6 +170,7 @@ def process_word_file(input_file, output_dir):
                 if author_name and not author_added and not text.startswith('852'):
                     author_para = new_doc.add_paragraph()
                     author_run = author_para.add_run(f"（先进制造学院与海洋学院关工委通讯员{author_name}）")
+                    author_run.bold = True
                     author_run.font.size = Pt(14)
                     author_run.font.name = '宋体'
                     author_run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
